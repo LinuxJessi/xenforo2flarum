@@ -1,0 +1,89 @@
+# Flarum target stack — the destination forum that receives the migrated data.
+#
+# On first boot the shinsenter/flarum image stages the Flarum CODEBASE (composer
+# create-project) but does NOT create the DB schema or admin user. The kit
+# bind-mounts install.yml into the container at /install.yml; you run:
+#
+#   docker compose exec flarum php flarum install --file=/install.yml
+#
+# once after the stack is healthy. That does the schema + admin user in one shot
+# (no manual setup wizard). After install, Flarum writes /var/www/html/config.php
+# inside the container and refuses to re-install on subsequent boots.
+#
+# NOTE: install.yml is mounted at /install.yml (NOT /var/www/html/install.yml)
+# because the image's INITIAL_PROJECT hook only stages Flarum when its app dir
+# is empty — putting a file inside it would skip project creation entirely.
+#
+# This stack joins the porter stack's network (xenforo2flarum_net) so nitro-porter,
+# running in the porter-php container, can write directly into flarum-db.
+#
+# START THE porter/ STACK FIRST — this stack expects that network to already exist.
+
+services:
+  flarum:
+    image: shinsenter/flarum:php8.2-nginx
+    container_name: flarum
+    restart: unless-stopped
+    ports:
+      - "8084:80"
+    environment:
+      # Stages Flarum's codebase via composer create-project on first boot.
+      # (Does NOT install Flarum — see install.yml for that.)
+      - INITIAL_PROJECT=flarum/flarum
+      - APP_URL=http://localhost:8084
+      - DB_CONNECTION=mysql
+      - DB_HOST=flarum-db
+      - DB_PORT=3306
+      - DB_DATABASE=flarum
+      - DB_USERNAME=flarum_user
+      - DB_PASSWORD=${FLARUM_DB_PASSWORD:?set FLARUM_DB_PASSWORD in .env}
+    volumes:
+      # Headless install config — `php flarum install --file=` reads this.
+      # Copy install.yml.example to install.yml and fill in admin credentials.
+      # IMPORTANT: mount path is OUTSIDE /var/www/html. The shinsenter image's
+      # INITIAL_PROJECT hook only stages Flarum when /var/www/html is empty;
+      # putting a file inside it skips project creation entirely.
+      - ./install.yml:/install.yml:ro
+    depends_on:
+      flarum-db:
+        condition: service_healthy
+    networks:
+      - flarum_net
+      - porter
+
+  flarum-db:
+    image: mariadb:10.6
+    container_name: flarum-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${FLARUM_ROOT_PASSWORD:?set FLARUM_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: flarum
+      MYSQL_USER: flarum_user
+      MYSQL_PASSWORD: ${FLARUM_DB_PASSWORD:?set FLARUM_DB_PASSWORD in .env}
+    ports:
+      - "3310:3306"
+    volumes:
+      - flarum_db_data:/var/lib/mysql
+      # Defensive: pre-creates a table some nitro-porter versions expect.
+      # Harmless — CREATE TABLE IF NOT EXISTS is a no-op if Flarum already made it.
+      - ./init-flarum-db.sql:/docker-entrypoint-initdb.d/init-flarum-db.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - flarum_net
+      - porter
+
+volumes:
+  flarum_db_data:
+
+networks:
+  flarum_net:
+    driver: bridge
+  # The porter stack's network. external: true means "this already exists" —
+  # so the porter/ stack must be up before you start this one.
+  porter:
+    name: xenforo2flarum_net
+    external: true

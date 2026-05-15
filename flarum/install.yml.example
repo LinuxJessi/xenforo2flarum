@@ -1,0 +1,38 @@
+# Flarum non-interactive install — used by `php flarum install --file=...` inside
+# the flarum container. Copy this file to install.yml and fill in real values.
+# install.yml is gitignored so the admin password never gets committed.
+#
+# The flarum/ compose.yml bind-mounts this file into the container at
+# /install.yml (outside /var/www/html, so the image's INITIAL_PROJECT hook
+# still stages Flarum). To install Flarum non-interactively:
+#
+#     docker compose exec flarum php flarum install --file=/install.yml
+#
+# Run it once, after the flarum stack is healthy. After it completes, Flarum
+# writes /var/www/html/config.php inside the container and refuses to re-run
+# install on subsequent boots.
+
+# First admin account. Password must be at least 8 characters.
+adminUser:
+  username: admin
+  password: change-me-min-8-chars
+  email: admin@example.com
+
+# The forum's public URL. Match flarum/.env's APP_URL.
+baseUrl: http://localhost:8084
+
+# Database connection — match flarum-db's credentials from flarum/.env.
+# The prefix MUST be 'flarum_' (with trailing underscore) for nitro-porter's
+# default target_prefix to align with Flarum's actual schema.
+databaseConfiguration:
+  driver: mysql
+  host: flarum-db
+  port: 3306
+  database: flarum
+  username: flarum_user
+  password: change-me-flarum
+  prefix: flarum_
+
+# Forum metadata. Anything you can set in the admin UI is settable here.
+settings:
+  forum_title: My Migrated Forum

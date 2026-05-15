@@ -1,0 +1,24 @@
+# --- Secrets & local config -------------------------------------------------
+.env
+porter/.env
+flarum/.env
+porter/config.php
+flarum/install.yml
+
+# --- Real data — never commit forum dumps or backups ------------------------
+db/*.sql
+!db/sample-xenforo.sql
+*.sql.gz
+backups/
+
+# --- nitro-porter checkout (clone it yourself — see README) -----------------
+nitro-porter/
+
+# --- Editor / build cruft ---------------------------------------------------
+*.bak
+*.swp
+*.good*
+*.almost-good
+*.log
+__pycache__/
+.DS_Store

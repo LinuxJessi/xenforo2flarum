@@ -1,0 +1,120 @@
+# nitro-porter migration stack — the XenForo → Flarum conversion engine.
+#
+# This file is an OVERLAY for a nitro-porter checkout. See the repo README for
+# the full walkthrough; in short:
+#   1. git clone https://github.com/prosembler/nitro-porter.git
+#   2. copy the contents of this porter/ directory into that checkout
+#   3. cp .env.example .env                # fill in the database passwords
+#   4. cp config.example.php config.php    # set source/target + DB credentials
+#   5. place your XenForo dump (or db/sample-xenforo.sql) at db/source.sql
+#   6. docker compose up --build -d
+#
+# Services:
+#   porter-php  — nitro-porter itself (FrankenPHP); you run the migration here
+#   xenforo-db  — MySQL holding your XenForo dump (imported on first boot)
+#   porter-db   — nitro-porter's own scratch database
+#   porter-pma  — phpMyAdmin, for inspecting every database in the stack
+#
+# Start THIS stack before the flarum/ stack — flarum/ joins this stack's network.
+
+services:
+  frankenphp:
+    container_name: porter-php
+    build:
+      context: .
+      dockerfile: .docker/run/php/Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    environment:
+      CADDY_GLOBAL_OPTIONS: "debug"
+    tty: true
+    volumes:
+      - $PWD:${WORKDIR:-/app}
+      - caddy_data:/data
+      - caddy_config:/config
+    extra_hosts:
+      host.docker.internal: host-gateway
+    networks:
+      - porter
+    depends_on:
+      porter-db:
+        condition: service_healthy
+      xenforo-db:
+        condition: service_healthy
+
+  xenforo-db:
+    image: mysql:8.0
+    container_name: xenforo-db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${XENFORO_DB_ROOT_PASSWORD:?set XENFORO_DB_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${XENFORO_DB_NAME:-xenforo}
+      MYSQL_USER: ${XENFORO_DB_USER:-xenforo}
+      MYSQL_PASSWORD: ${XENFORO_DB_PASSWORD:?set XENFORO_DB_PASSWORD in .env}
+    ports:
+      - "3309:3306"
+    networks:
+      - porter
+    volumes:
+      # Your XenForo dump is imported on first boot by init-db.sh.
+      # Put your own dump — or db/sample-xenforo.sql — here as db/source.sql.
+      - ./db/source.sql:/seed/source.sql:ro
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-hlocalhost", "-u${XENFORO_DB_USER:-xenforo}", "-p${XENFORO_DB_PASSWORD}"]
+      start_period: 10s
+      interval: 10s
+      timeout: 30s
+      retries: 5
+
+  porter-db:
+    image: mariadb:lts
+    container_name: porter-db
+    environment:
+      # nitro-porter's internal scratch database. The defaults are fine — it is
+      # not reachable beyond this stack's private network and holds no real data
+      # once a run finishes.
+      MYSQL_ROOT_PASSWORD: porter
+      MYSQL_DATABASE: porter
+      MYSQL_USER: porter
+      MYSQL_PASSWORD: porter
+    ports:
+      - "3308:3306"
+    networks:
+      - porter
+    volumes:
+      - ./init-porter-db.sql:/docker-entrypoint-initdb.d/init-porter-db.sql:ro
+      - porter_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 5s
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  phpmyadmin:
+    image: phpmyadmin
+    container_name: porter-pma
+    restart: always
+    ports:
+      - "8082:80"
+    environment:
+      PMA_ARBITRARY: 1
+      UPLOAD_LIMIT: 1G
+    networks:
+      - porter
+    depends_on:
+      porter-db:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
+  porter_data:
+
+# Named explicitly so the flarum/ stack can join it as an external network,
+# independent of whatever directory name this checkout happens to have.
+networks:
+  porter:
+    name: xenforo2flarum_net
+    driver: bridge
