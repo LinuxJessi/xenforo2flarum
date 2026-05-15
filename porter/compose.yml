@@ -99,6 +99,11 @@ services:
     ports:
       - "8082:80"
     environment:
+      # All three of the kit's databases as a labelled dropdown — no need to
+      # memorise hostnames. PMA_ARBITRARY=1 keeps the "type any host" option
+      # available alongside the dropdown for power users / debugging.
+      PMA_HOSTS: xenforo-db,porter-db,flarum-db
+      PMA_VERBOSES: XenForo source (xf_*),Porter scratch (PORT_*),Flarum target (flarum_*)
       PMA_ARBITRARY: 1
       UPLOAD_LIMIT: 1G
     networks:
