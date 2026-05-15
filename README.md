@@ -198,17 +198,30 @@ To start over: `docker compose down -v` on both stacks wipes the databases.
 
 ## Inspecting the databases
 
-phpMyAdmin runs at <http://localhost:8082> (`PMA_ARBITRARY` is on, so log into
-any host in the stack):
+phpMyAdmin runs at <http://localhost:8082>. The kit pre-populates the
+**Server choice** dropdown with all three databases in the stack, so you don't
+need to memorise hostnames — pick the one you want, enter your DB credentials
+from `.env`, and you're in. `PMA_ARBITRARY` is also on so the Server text
+field stays available for ad-hoc connections.
 
-| Host | Database | What's in it |
+![phpMyAdmin login screen with the three-database dropdown](docs/screenshots/phpmyadmin-login.png)
+
+| Pick from the dropdown | Database | What's in it |
 |---|---|---|
-| `xenforo-db` | `xenforo` | the imported XenForo source data |
-| `porter-db`  | `porter`  | nitro-porter's scratch space |
-| `flarum-db`  | `flarum`  | the migrated Flarum forum |
+| **XenForo source (xf_*)** | `xenforo` | the imported XenForo source data |
+| **Porter scratch (PORT_*)** | `porter`  | nitro-porter's scratch space |
+| **Flarum target (flarum_*)** | `flarum`  | the migrated Flarum forum |
 
-Watching these three side by side is the easiest way to confirm a run did what
-you expected.
+Inside the Flarum target database you'll see both the live `flarum_*` tables
+and the `PORT_*` scratch tables nitro-porter wrote while normalising your
+source data. That side-by-side view is the easiest way to confirm a run did
+what you expected — every `PORT_Discussion` row should have a corresponding
+`flarum_discussions` row, and `flarum_users` should match `PORT_User`'s count:
+
+![phpMyAdmin showing PORT_* scratch tables next to flarum_* target tables](docs/screenshots/phpmyadmin-flarum-tables.png)
+
+The `PORT_*` tables are safe to drop after a successful migration — nitro-porter
+will tell you so at the end of `bin/porter run`.
 
 ## Gotchas & lessons learned
 
